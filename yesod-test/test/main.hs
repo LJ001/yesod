@@ -25,6 +25,11 @@ import Data.ByteString.Lazy.Char8 ()
 import qualified Data.Map as Map
 import qualified Text.HTML.DOM as HD
 
+import Data.Aeson
+import Debug.Trace
+import qualified Data.ByteString as S8
+import qualified Network.Wai as W
+
 parseQuery_ = either error id . parseQuery
 findBySelector_ x = either error id . findBySelector x
 parseHtml_ = HD.parseLBS
@@ -188,6 +193,20 @@ main = hspec $ do
                 setMethod "POST"
                 setUrl ("/" :: Text)
             statusIs 403
+        yit "Should be able to post JSON with the correct Content-Type" $ do
+            get ("/" :: Text)
+            statusIs 200
+
+            let body = encode $ object ["key" .= ("value" :: Value)]
+
+            request $ do
+                setMethod "GET"
+                setUrl ("/json" :: Text)
+                addTokenFromCookie
+                addRequestHeader ("Content-Type","application/json")
+                setRequestBody body
+            statusIs 200
+        
 
 
 
@@ -239,6 +258,7 @@ data CsrfApp = CsrfApp
 
 mkYesod "CsrfApp" [parseRoutes|
 / HomeR GET POST
+/json JsonR GET
 |]
 
 instance Yesod CsrfApp where
@@ -257,3 +277,17 @@ postHomeR = defaultLayout
         <p>
             Welcome to my test application.
     |]
+
+getJsonR :: Handler ()
+getJsonR = do
+    contentType <- rawRequestContentType
+    if contentType == Just "application/json" 
+        then return () 
+        else error ("Expecting Content-Type: application/json. Actual first Content-Type is" ++ show contentType)
+
+
+rawRequestContentType :: MonadHandler m => m (Maybe S8.ByteString)
+rawRequestContentType = do
+  headers <- W.requestHeaders <$> waiRequest
+  traceShowM $ "Headers are " ++ show headers
+  return $ lookup "Content-Type" headers
